@@ -1,0 +1,10 @@
+{
+  "name": "Drowsiness Detection",
+  "description": "Real-time AI driver drowsiness and fatigue detection system monitoring eye aspect ratio and face landmarks with live webcam alerts.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
