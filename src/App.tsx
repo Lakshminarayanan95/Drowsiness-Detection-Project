@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { DetectionSettings, EyeStatus, DrowsinessEvent, ChartDataPoint, InputSourceMode, CameraDevice } from './types';
 import { Header } from './components/Header';
 import { DetectionCanvas } from './components/DetectionCanvas';
@@ -45,6 +45,8 @@ export function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
 
+  const lastChartUpdateRef = useRef<number>(0);
+
   // Enumerate cameras
   useEffect(() => {
     async function getCameras() {
@@ -58,8 +60,8 @@ export function App() {
               label: d.label || `Camera ${i + 1}`,
             }));
           setCameras(videoDevs);
-          if (videoDevs.length > 0 && !selectedCamera) {
-            setSelectedCamera(videoDevs[0].deviceId);
+          if (videoDevs.length > 0) {
+            setSelectedCamera((prev) => prev || videoDevs[0].deviceId);
           }
         } catch (e) {
           console.warn('Error enumerating camera devices:', e);
@@ -67,28 +69,32 @@ export function App() {
       }
     }
     getCameras();
-  }, [selectedCamera]);
+  }, []);
 
   // Handle live eye status update
   const handleUpdateEyeStatus = useCallback(
     (status: EyeStatus) => {
       setEyeStatus(status);
 
-      // Append chart point
-      const timeStr = new Date().toLocaleTimeString([], { hour12: false, minute: '2-digit', second: '2-digit' });
-      setChartData((prev) => {
-        const next = [
-          ...prev,
-          {
-            time: timeStr,
-            leftEar: parseFloat(status.leftEar.toFixed(3)),
-            rightEar: parseFloat(status.rightEar.toFixed(3)),
-            avgEar: parseFloat(status.averageEar.toFixed(3)),
-            threshold: settings.earThreshold,
-          },
-        ];
-        return next.slice(-35); // Keep rolling 35 points
-      });
+      // Append chart point (throttled to ~10fps to maintain smooth UI and prevent render lag)
+      const now = performance.now();
+      if (now - lastChartUpdateRef.current >= 100) {
+        lastChartUpdateRef.current = now;
+        const timeStr = new Date().toLocaleTimeString([], { hour12: false, minute: '2-digit', second: '2-digit' });
+        setChartData((prev) => {
+          const next = [
+            ...prev,
+            {
+              time: timeStr,
+              leftEar: parseFloat(status.leftEar.toFixed(3)),
+              rightEar: parseFloat(status.rightEar.toFixed(3)),
+              avgEar: parseFloat(status.averageEar.toFixed(3)),
+              threshold: settings.earThreshold,
+            },
+          ];
+          return next.slice(-35); // Keep rolling 35 points
+        });
+      }
     },
     [settings.earThreshold]
   );

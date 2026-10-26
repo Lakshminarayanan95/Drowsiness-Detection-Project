@@ -51,6 +51,8 @@ export const DetectionCanvas: React.FC<DetectionCanvasProps> = ({
   const lastFrameTimeRef = useRef<number>(performance.now());
   const drowsyStartTimeRef = useRef<number | null>(null);
   const closedFramesRef = useRef<number>(0);
+  const isDrowsyRef = useRef<boolean>(false);
+  const currentEarRef = useRef<number>(0.32);
   const isStartingRef = useRef<boolean>(false);
 
   // Synchronize state to ref
@@ -58,35 +60,37 @@ export const DetectionCanvas: React.FC<DetectionCanvasProps> = ({
 
   // Handle Drowsiness Alert Trigger
   const triggerDrowsyAlert = useCallback(() => {
-    if (!drowsyStartTimeRef.current) {
+    if (!isDrowsyRef.current) {
+      isDrowsyRef.current = true;
+      setIsDrowsy(true);
+      setIsDrowsyState(true);
+
       drowsyStartTimeRef.current = Date.now();
       const event: DrowsinessEvent = {
         id: Math.random().toString(36).substring(2, 9),
         timestamp: new Date().toLocaleTimeString(),
         durationSeconds: 0,
-        maxEarDrop: currentEar,
+        maxEarDrop: currentEarRef.current,
         status: 'DROWSY',
         severity: 'CRITICAL',
       };
       onDrowsyEventTriggered(event);
-    }
 
-    setIsDrowsy(true);
-    setIsDrowsyState(true);
-
-    if (settings.audioAlertsEnabled) {
-      soundManager.startAlarm(settings.alarmType, settings.alarmVolume);
+      if (settings.audioAlertsEnabled) {
+        soundManager.startAlarm(settings.alarmType, settings.alarmVolume);
+      }
     }
-  }, [currentEar, onDrowsyEventTriggered, setIsDrowsyState, settings.alarmType, settings.alarmVolume, settings.audioAlertsEnabled]);
+  }, [onDrowsyEventTriggered, setIsDrowsyState, settings.alarmType, settings.alarmVolume, settings.audioAlertsEnabled]);
 
   const clearDrowsyAlert = useCallback(() => {
-    if (isDrowsy) {
+    if (isDrowsyRef.current) {
+      isDrowsyRef.current = false;
       setIsDrowsy(false);
       setIsDrowsyState(false);
       soundManager.stopAlarm();
       drowsyStartTimeRef.current = null;
     }
-  }, [isDrowsy, setIsDrowsyState]);
+  }, [setIsDrowsyState]);
 
   // Main Landmark Processing
   const onResults = useCallback(
@@ -196,23 +200,26 @@ export const DetectionCanvas: React.FC<DetectionCanvasProps> = ({
         };
       }
 
+      currentEarRef.current = eyeStatus.averageEar;
       setCurrentEar(eyeStatus.averageEar);
       onUpdateEyeStatus(eyeStatus);
 
       // Drowsiness closed frames tracking
       if (eyeStatus.isClosed) {
-        setClosedFrames((prev) => {
-          const updated = prev + 1;
-          onFramesClosedUpdate(updated);
+        const nextClosed = closedFramesRef.current + 1;
+        closedFramesRef.current = nextClosed;
+        setClosedFrames(nextClosed);
+        onFramesClosedUpdate(nextClosed);
 
-          if (updated >= settings.drowsyFrameThreshold) {
-            triggerDrowsyAlert();
-          }
-          return updated;
-        });
+        if (nextClosed >= settings.drowsyFrameThreshold) {
+          triggerDrowsyAlert();
+        }
       } else {
-        setClosedFrames(0);
-        onFramesClosedUpdate(0);
+        if (closedFramesRef.current !== 0) {
+          closedFramesRef.current = 0;
+          setClosedFrames(0);
+          onFramesClosedUpdate(0);
+        }
         clearDrowsyAlert();
       }
 
@@ -415,8 +422,12 @@ export const DetectionCanvas: React.FC<DetectionCanvasProps> = ({
         cancelAnimationFrame(animFrameRef.current);
       }
       soundManager.stopAlarm();
+      if (isDrowsyRef.current) {
+        isDrowsyRef.current = false;
+        setIsDrowsyState(false);
+      }
     };
-  }, [inputMode, selectedCamera, startWebcamStream, startDemoVideo, stopExistingStream]);
+  }, [inputMode, selectedCamera, startWebcamStream, startDemoVideo, stopExistingStream, setIsDrowsyState]);
 
   return (
     <div className="relative bg-slate-950 rounded-2xl border border-slate-800 overflow-hidden shadow-2xl flex flex-col items-center justify-center">
